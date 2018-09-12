@@ -58,10 +58,10 @@ class logintoapp(Resource):
                     app.logger.info("Password Matched")
                     session['logged_inn'] = True
                     session['username'] = username
-
+                    cur.close()
                     return session['logged_inn']
 
-                    cur.close
+
 
                 elif sha256_crypt.verify(password_canidate, password) == False:
                     app.logger.info("Password incorrect")
