@@ -1,17 +1,94 @@
 import os
-import sys
 import getpass
-from flask import Flask, request
+from flask import Flask, request, session, logging, request
 from flask_restful import Resource, Api
 from slackclass import slackclient
 from ChefClass import cheftools
+from flaskext.mysql import MySQL
+import configparser
+from passlib.hash import sha256_crypt
+from functools import wraps
+
 
 
 app = Flask(__name__)
 app.secret_key = 'q$P1Q35vNxI!'
 api = Api(app)
 
+mysql = MySQL(app)
+
+
+app.secret_key = 'q$P1Q35vNxI!'
+conf = configparser.ConfigParser()
+conf.sections()
+conf.read('/etc/dm/mysql.ini')
+
+
+
+app.config['MYSQL_DATABASE_USER'] = conf["mysql"]["DatabaseUser"]
+app.config['MYSQL_DATABASE_PASSWORD'] = conf["mysql"]["DatbasePassword"]
+app.config['MYSQL_DATABASE_HOST'] = conf["mysql"]["DatabaseLocation"]
+app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
+
+
+class logintoapp(Resource):
+
+    def post(self):
+
+            loginperson = request.get_json()
+            username = loginperson['username']
+            password_canidate = loginperson['password']
+
+
+
+    #Create cursor
+            cur = mysql.get_db().cursor()
+
+    #get user by username
+            result = cur.execute("SELECT * FROM auth.users WHERE username = %s", [username])
+            if result > 0:
+            # get stored hash
+                data = cur.fetchone()
+                password = data['password']
+                enabled_user = data['enabled_user']
+
+
+
+                if sha256_crypt.verify(password_canidate, password) and enabled_user == 1:
+                    app.logger.info("Password Matched")
+                    session['logged_inn'] = True
+                    session['username'] = username
+
+                    return session['logged_inn']
+
+                    cur.close
+
+                elif sha256_crypt.verify(password_canidate, password) == False:
+                    app.logger.info("Password incorrect")
+
+
+                else:
+                    app.logger.info("Account is locked")
+
+
+            else:
+                app.logger.info("No user")
+
+
+def is_logged_in(f):
+    @wraps(f)
+    def wrap(*args, **kwargs):
+        if 'logged_inn' in session:
+            return f( *args, **kwargs )
+
+        else:
+          message =   {'message': 'You need to be logged in to access this function'}
+          return message
+
+
+
 class vmwarechefservers(Resource):
+    @is_logged_in
     def post(self):
         data = request.get_json(silent=True)
         ChefFolder = '/etc/chef'
@@ -35,7 +112,8 @@ class vmwarechefservers(Resource):
 
 
 
-api.add_resource(vmwarechefservers, '/create/chefserver')
+api.add_resource(vmwarechefservers, '/api/create/chefserver')
+api.add_resource(logintoapp,'/api/login')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
